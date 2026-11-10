@@ -1,0 +1,9 @@
+# Unencrypted sources. The repo is public (free GitHub Pages), so these must never be pushed.
+mockups/
+design-source/
+feedback.config.json
+
+# Local test output and tooling
+.preview/
+.claude/
+node_modules/

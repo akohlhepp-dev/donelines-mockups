@@ -1,0 +1,4 @@
+{
+  "endpoint": "https://script.google.com/macros/s/PASTE-YOUR-DEPLOYMENT-ID/exec",
+  "token": "a-long-random-string-that-matches-Code.gs"
+}

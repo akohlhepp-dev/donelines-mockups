@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Private preview</title>
+<style>
+  :root { color-scheme: light dark; --bg:#F8FAFC; --card:#FFFFFF; --ink:#0F172A; --muted:#475569; --line:#CBD5E1; --accent:#0F172A; --accent-ink:#FFFFFF; --err:#B42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0B1120; --card:#111827; --ink:#F1F5F9; --muted:#94A3B8; --line:#334155; --accent:#F1F5F9; --accent-ink:#0B1120; --err:#FDA29B; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px 16px; background:var(--bg); color:var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  form { width:100%; max-width:380px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:32px 28px; display:flex; flex-direction:column; gap:14px; }
+  h1 { margin:0; font-size:22px; letter-spacing:-0.01em; }
+  p { margin:0; color:var(--muted); font-size:15px; line-height:1.5; }
+  label { font-size:14px; font-weight:600; }
+  input[type=password] { width:100%; margin-top:6px; padding:12px 14px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:transparent; color:var(--ink); }
+  input[type=password]:focus { outline:2px solid #2E90FA; outline-offset:1px; }
+  .remember { display:flex; gap:8px; align-items:center; font-weight:400; color:var(--muted); }
+  button { padding:13px; font-size:16px; font-weight:600; border:0; border-radius:10px; background:var(--accent); color:var(--accent-ink); cursor:pointer; }
+  button:disabled { opacity:.6; cursor:default; }
+  .err { color:var(--err); font-size:14px; min-height:1.2em; }
+</style>
+</head>
+<body>
+<form id="gate" hidden>
+  <h1>Private preview</h1>
+  <p>Enter the password you were sent to view these designs.</p>
+  <label>Password
+    <input id="pw" type="password" autocomplete="current-password" required autofocus>
+  </label>
+  <label class="remember"><input id="remember" type="checkbox"> Remember on this device</label>
+  <button id="go" type="submit">View designs</button>
+  <div class="err" id="err" role="alert"></div>
+</form>
+<noscript><p>JavaScript is needed to unlock this page.</p></noscript>
+<script>
+(function () {
+  // Filled in by tools/build.mjs
+  var DATA = /*DATA*/null/*END*/;
+  var KEY_NAME = 'dl-gate-key:' + DATA.salt;
+  var form = document.getElementById('gate'), err = document.getElementById('err'), btn = document.getElementById('go');
+
+  function b64(s) { var bin = atob(s), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  function toB64(buf) { var u = new Uint8Array(buf), s = ''; for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return btoa(s); }
+  function store(get, k, v) {
+    try {
+      if (get) return sessionStorage.getItem(k) || localStorage.getItem(k);
+      if (v === null) { sessionStorage.removeItem(k); localStorage.removeItem(k); }
+      else { sessionStorage.setItem(k, v); if (document.getElementById('remember').checked) localStorage.setItem(k, v); }
+    } catch (e) { return null; }
+  }
+
+  function deriveKey(password) {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']).then(function (base) {
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: b64(DATA.salt), iterations: DATA.iterations, hash: 'SHA-256' },
+        base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+    });
+  }
+  function importRaw(raw) {
+    return crypto.subtle.importKey('raw', b64(raw), { name: 'AES-GCM' }, true, ['decrypt']);
+  }
+  function open(key) {
+    return crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(DATA.iv) }, key, b64(DATA.ct)).then(function (buf) {
+      return { key: key, html: new TextDecoder().decode(buf) };
+    });
+  }
+  function show(res) {
+    return crypto.subtle.exportKey('raw', res.key).then(function (raw) {
+      store(false, KEY_NAME, toB64(raw));
+      // Replace this page only once it has finished parsing; otherwise the
+      // browser merges the two documents.
+      var swap = function () { document.open(); document.write(res.html); document.close(); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', swap);
+      else swap();
+    });
+  }
+
+  if (!window.crypto || !crypto.subtle) {
+    form.hidden = false;
+    err.textContent = 'This browser can’t unlock the page. Please open the link in a current version of Chrome, Edge, Safari or Firefox.';
+    btn.disabled = true;
+    return;
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    err.textContent = ''; btn.disabled = true; btn.textContent = 'Unlocking…';
+    deriveKey(document.getElementById('pw').value).then(open).then(show).catch(function () {
+      btn.disabled = false; btn.textContent = 'View designs';
+      err.textContent = 'That password didn’t work. Check it and try again.';
+      document.getElementById('pw').select();
+    });
+  });
+
+  // Reuse a key from this visit (or a remembered one) so moving between pages doesn't re-prompt.
+  var saved = store(true, KEY_NAME);
+  if (saved) {
+    importRaw(saved).then(open).then(show).catch(function () { store(false, KEY_NAME, null); form.hidden = false; });
+  } else {
+    form.hidden = false;
+  }
+})();
+</script>
+</body>
+</html>
