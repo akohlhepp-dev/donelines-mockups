@@ -26,6 +26,7 @@ const outDir = resolve(root, flag('--out') || 'docs');
 
 // Page order and labels for the direction switcher.
 const PAGES = [
+  { slug: 'a2-wip', short: 'A2', title: 'A2 · Calm, revised (work in progress)' },
   { slug: 'a-calm', short: 'A', title: 'A · Calm & Focused' },
   { slug: 'b-bold', short: 'B', title: 'B · Bold & Confident' },
   { slug: 'c-warm', short: 'C', title: 'C · Warm & Approachable' },
@@ -88,6 +89,16 @@ mkdirSync(outDir, { recursive: true });
 const files = readdirSync(join(root, 'mockups')).filter((f) => f.endsWith('.html'));
 for (const f of files) {
   let html = readFileSync(join(root, 'mockups', f), 'utf8');
+  // Images under mockups/assets/ are embedded as data: URIs so they're encrypted
+  // with the page instead of being published as readable files.
+  html = html.replace(/(\bsrc=")(assets\/[^"]+)"/g, (_, attr, rel) => {
+    const file = join(root, 'mockups', rel);
+    if (!existsSync(file)) throw new Error(`${f}: missing image ${rel}`);
+    const ext = rel.split('.').pop().toLowerCase();
+    const type = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif' }[ext];
+    if (!type) throw new Error(`${f}: unsupported image type ${rel}`);
+    return `${attr}data:${type};base64,${readFileSync(file).toString('base64')}"`;
+  });
   const slug = f.replace(/\.html$/, '');
   const page = PAGES.find((p) => p.slug === slug);
   if (page) {
